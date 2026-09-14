@@ -418,39 +418,78 @@ written 2446.7 MB | 位图 2415.0 MB | 差最大到过 485.5 MB
 
 ```
 mirom/
-├── mirom.py                引擎 + 命令行 (跨平台, 纯标准库)
-├── mirom_gui.py            图形界面 (PySide6 + PyQt-Fluent-Widgets)
-├── vdesk.py                Windows 虚拟桌面支持
-├── assets/                 图标 (源图 + 自动生成的全套)
-├── docs/使用说明.txt         面向小白的纯文本说明
-├── tests/                  三套自动化测试, 共 246 项
-│   ├── test_edge.py            边界条件 (断点容错/路径/限速/锁…) 108 项
-│   ├── test_settings.py        设置系统与 GUI 流程 94 项
-│   └── test_gui_buttons.py     全按钮遍历 44 项
+├── mirom.py                    引擎 + 命令行 (跨平台, 纯标准库)
+├── mirom_gui.py                图形界面 (PySide6 + PyQt-Fluent-Widgets)
+├── vdesk.py                    Windows 虚拟桌面支持
+├── requirements.txt            图形界面依赖 (引擎本身零依赖)
+├── CHANGELOG.md                更新日志 + 开发中踩过的坑
+├── assets/                     图标 (源图 + 自动生成的全套)
+├── docs/使用说明.txt             面向小白的纯文本说明
+├── .github/
+│   ├── workflows/build.yml     CI: 测试 → 打包 → 推 tag 时自动发 Release
+│   ├── ISSUE_TEMPLATE/         问题反馈模板 (带诊断报告栏位)
+│   └── PULL_REQUEST_TEMPLATE.md
+├── tests/                      三套自动化测试, 共 246 项
+│   ├── test_edge.py                边界条件 (断点容错/路径/限速/锁…) 108 项
+│   ├── test_settings.py            设置系统、GUI 流程、图标与帮助接线 137 项
+│   └── test_gui_buttons.py         全按钮遍历 44 项
 └── tools/
-    ├── 打包.bat             一键打包成 exe
-    ├── make_logo.py         从 webp 生成全套图标 + 多分辨率 ico
-    └── version_info.txt     EXE 属性页信息
+    ├── build.py                打包主逻辑 (本地与 CI 共用, 避免参数漂移)
+    ├── 打包.bat                 双击即打包, 内部调用 build.py
+    ├── make_logo.py            从 webp 生成全套图标 + 多分辨率 ico
+    ├── version_info.txt        EXE 属性页信息 (作者署名)
+    ├── publish_github.py       把源码发布到 GitHub (无需本地 git)
+    └── release_github.py       压 zip 并发到 Releases
 ```
 
 ## 从源码运行
 
 ```bash
-pip install PySide6 PySide6-Fluent-Widgets pyqtgraph
+pip install -r requirements.txt
 python mirom_gui.py
 ```
 
+> 只想用命令行的话**什么都不用装** —— `mirom.py` 是纯标准库的：
+> ```bash
+> python mirom.py <链接> --probe      # 只测速，不写盘
+> python mirom.py <链接>              # 直接下载
+> python mirom.py --selftest          # 跑自检
+> ```
+
 ## 自己打包
 
-双击 `tools\打包.bat` 即可（需要 Python 3.8+）。
+双击 `tools\打包.bat`（需要 Python 3.8+）。它会先装齐依赖，再调 `tools/build.py`。
+
+打包脚本刻意只有一份：`tools/build.py`。本地和 GitHub Actions 都调它 ——
+要是把那一长串 `--exclude-module` 在两边各写一遍，某天本地排掉一个 Qt 模块，
+CI 打出来的包就跟本地不一样了。
+
+```bash
+python tools/build.py            # 完整打包
+python tools/build.py --zip      # 打完再压一个 zip
+python tools/build.py --skip-logo  # 图标没改时省几秒
+```
 
 ## 跑测试
 
 ```bash
+python mirom.py --selftest          # 引擎自检 (约 10 秒)
 python tests/test_edge.py           # 纯逻辑, 不联网
-python tests/test_settings.py       # GUI 设置系统
+python tests/test_settings.py       # GUI 设置系统, 不联网
 python tests/test_gui_buttons.py    # 全按钮遍历 (会真下载, 需要网络)
 ```
+
+## 自动构建
+
+仓库带了 GitHub Actions 工作流，不需要 Windows 机器也能拿到 exe：
+
+- **推到 `main`** → 自动跑测试 + 打包，产物在 Actions 页面的 Artifacts 里
+- **推一个 `v*` 标签** → 额外自动创建 Release 并附上 zip
+- **手动触发** → Actions 页面点「Run workflow」，可以勾选是否同时发 Release
+
+工作流里除了构建，还会**从产物本身再验一遍**：EXE 属性页的作者信息、
+内嵌图标帧数（少于 5 帧任务栏图标会糊）、`assets` 里有没有 0 字节文件 ——
+光看"构建没报错"是不够的。
 
 ---
 
