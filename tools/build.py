@@ -24,6 +24,13 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from _console import force_utf8      # noqa: E402
+
+# ⚠ 必须在任何 print 之前。英文版 Windows 的控制台是 cp1252, 编不出中文,
+#   不处理的话脚本第一句中文就 UnicodeEncodeError 崩掉 (CI 上就是这么炸的)。
+force_utf8()
+
 VERSION = "1.0.0"
 
 # 排掉用不到的 Qt 模块 —— 不排的话 dist 会从 156MB 涨到 600MB+。

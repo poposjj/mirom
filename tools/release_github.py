@@ -19,6 +19,12 @@ import urllib.error
 import urllib.request
 import zipfile
 
+_HERE0 = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE0)
+from _console import force_utf8      # noqa: E402
+
+force_utf8()          # 英文版 Windows 上中文输出会崩, 见 _console.py
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "mirom")
 REPO = "poposjj/mirom"

@@ -21,7 +21,14 @@ import os
 import struct
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE0 = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE0)
+from _console import force_utf8      # noqa: E402
+
+# ⚠ 必须在任何 print 之前: 英文版 Windows 的 cp1252 编不出中文,
+#   不处理的话第一句中文输出就崩 (CI 上真的炸过)。
+force_utf8()
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt, QRect  # noqa: E402

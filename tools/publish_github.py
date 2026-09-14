@@ -23,6 +23,12 @@ import time
 import urllib.error
 import urllib.request
 
+_HERE0 = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE0)
+from _console import force_utf8      # noqa: E402
+
+force_utf8()          # 英文版 Windows 上中文输出会崩, 见 _console.py
+
 OWNER_FALLBACK = "poposjj"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -58,6 +64,7 @@ FILES = [
     "tests/test_settings.py",
     "tests/test_gui_buttons.py",
     "tools/打包.bat",
+    "tools/_console.py",
     "tools/build.py",
     "tools/make_logo.py",
     "tools/version_info.txt",

@@ -773,7 +773,46 @@ for enc in ("cp1252", "ascii", "cp437", "latin-1"):
         chk("PYTHONIOENCODING=%s 下自检不崩" % enc, False,
             "%s: %s" % (type(e).__name__, e))
 
-# 顺带确认: 源码里确实有强制 UTF-8 的处理, 且是在模块级就生效的
+# ★ 所有工具脚本也必须过关 —— 第一次只修了 mirom.py, CI 紧接着就在
+#   tools/build.py 上炸了第二次。所以这里逐个脚本都跑一遍, 而不是只测引擎。
+_root = os.path.dirname(_here)
+_tools = [
+    ("tools/build.py", ["--help"]),
+    ("tools/make_logo.py", None),          # 直接跑, 会重新生成图标
+    ("tools/publish_github.py", ["--dry-run"]),
+    ("tools/release_github.py", ["--no-upload"]),
+]
+for rel, argv in _tools:
+    p = os.path.join(_root, rel.replace("/", os.sep))
+    if not os.path.exists(p):
+        chk("工具脚本存在: %s" % rel, False, "文件缺失")
+        continue
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"     # 模拟英文版 Windows
+    env.setdefault("GH_TOKEN", "dummy-not-used")
+    args = [sys.executable, "-u", p] + (argv or [])
+    try:
+        r = subprocess.run(args, capture_output=True, timeout=300, env=env,
+                           cwd=_root)
+        out = (r.stdout or b"") + (r.stderr or b"")
+        bad = b"UnicodeEncodeError" in out or b"charmap" in out
+        chk("cp1252 下 %s 不因编码崩" % rel, not bad,
+            "exit=%s%s" % (r.returncode, " (有编码异常)" if bad else ""))
+    except subprocess.TimeoutExpired:
+        chk("cp1252 下 %s 不因编码崩" % rel, False, "超时")
+    except Exception as e:
+        chk("cp1252 下 %s 不因编码崩" % rel, False, "%s: %s" % (type(e).__name__, e))
+
+# 每个入口脚本都必须自己调 force_utf8 —— 这是一条约定, 漏一个就复发
+for rel in ("mirom.py", "tools/build.py", "tools/make_logo.py",
+            "tools/publish_github.py", "tools/release_github.py"):
+    p = os.path.join(_root, rel.replace("/", os.sep))
+    try:
+        txt = open(p, encoding="utf-8").read()
+        chk("%s 调用了 force_utf8" % rel, "force_utf8()" in txt, "")
+    except Exception as e:
+        chk("%s 调用了 force_utf8" % rel, False, str(e))
+
 try:
     import inspect as _ins13
     _src13 = _ins13.getsource(M)
@@ -782,6 +821,9 @@ try:
         "\n_force_utf8()" in _src13, "不能等 main() 才调")
     chk("reconfigure 带 errors=replace",
         'errors="replace"' in _src13, "兜底, 编不出也不能崩")
+    chk("tools/_console.py 是共享实现",
+        os.path.exists(os.path.join(_root, "tools", "_console.py")),
+        "抽成共享模块才不会漏")
 except Exception as e:
     chk("编码处理检查", False, "%s: %s" % (type(e).__name__, e))
 
