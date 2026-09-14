@@ -215,16 +215,41 @@ def main():
     # 小尺寸用稍大的留白, 否则在 16px 下圆角会贴边显得很挤
     for size in (16, 24, 32, 48, 64, 128, 256, 512):
         out = os.path.join(ASSETS, "logo_%d.png" % size)
-        scaled(img, size).save(out, "PNG")
+        # ★ 先写临时文件再原子替换。
+        #   踩过的坑: 用 PowerShell 的 `| Select-Object -First N` 截断本脚本输出时,
+        #   管道提前关闭会导致进程被杀 —— 而 logo_16 恰好是第一个被保存的文件,
+        #   于是留下一个 0 字节的 png, 打进包里就是"没有 16px 图标"。
+        #   直接 save(out) 是"先清空再写", 被杀就必然留空文件; 写 tmp 再 replace
+        #   的话, 最坏情况也只是保留上一次的完整文件。
+        tmp = out + ".tmp"
+        if not scaled(img, size).save(tmp, "PNG"):
+            raise SystemExit("写图标失败: %s" % tmp)
+        if os.path.getsize(tmp) == 0:
+            raise SystemExit("图标写出来是空的: %s" % tmp)
+        os.replace(tmp, out)
         made.append(out)
     # 主图 = 512, 代码里按需缩放
     main_png = os.path.join(ASSETS, "logo.png")
-    scaled(img, 512).save(main_png, "PNG")
+    _t = main_png + ".tmp"
+    scaled(img, 512).save(_t, "PNG")
+    if os.path.getsize(_t) == 0:
+        raise SystemExit("主图写出来是空的")
+    os.replace(_t, main_png)
     made.append(main_png)
 
     ico = os.path.join(ASSETS, "logo.ico")
-    sizes = write_ico(ico, img)
+    ico_tmp = ico + ".tmp"
+    sizes = write_ico(ico_tmp, img)
+    if os.path.getsize(ico_tmp) == 0:
+        raise SystemExit("图标文件写出来是空的")
+    os.replace(ico_tmp, ico)
     made.append(ico)
+
+    # 最后再统一体检一遍: 任何一个资源是 0 字节都必须当场失败。
+    # 静默产出一个空图标, 表现是"打包出来某个尺寸没图标", 极难定位。
+    bad = [os.path.basename(p) for p in made if os.path.getsize(p) == 0]
+    if bad:
+        raise SystemExit("以下图标是 0 字节, 生成失败: %s" % ", ".join(bad))
 
     print("\n产出:")
     for p in made:
