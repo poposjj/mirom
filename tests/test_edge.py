@@ -828,6 +828,35 @@ except Exception as e:
     chk("编码处理检查", False, "%s: %s" % (type(e).__name__, e))
 
 
+# ★ 命令行参数在两个入口上必须一致。
+#   踩过的坑: mirom.exe 的入口是【图形界面】, 而 --selftest 是 mirom.py 的参数。
+#   敲 `mirom.exe --selftest` 时 GUI 静默忽略它、照常弹窗口然后一直等 ——
+#   看起来就像"卡死了", 实测在开发中因此白等过两次几百秒的超时。
+#   现在两个入口都认这组无界面参数, 这里守住这个契约。
+_gui = os.path.join(os.path.dirname(_here), "mirom_gui.py")
+for flag, want in (("--version", "mirom"), ("--selftest", "PASS")):
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    for entry, label in ((_engine, "mirom.py"), (_gui, "mirom_gui.py")):
+        try:
+            t0 = time.time()
+            r = subprocess.run([sys.executable, "-u", entry, flag],
+                               capture_output=True, timeout=180, env=env,
+                               cwd=os.path.dirname(_engine))
+            el = time.time() - t0
+            out = ((r.stdout or b"") + (r.stderr or b"")).decode("utf-8", "replace")
+            # 关键: 必须【快速返回】且带上内容 —— 超时或空输出都算失败
+            chk("%s %s 能正常返回" % (label, flag),
+                r.returncode == 0 and want in out and el < 120,
+                "%.1fs, exit=%s" % (el, r.returncode))
+        except subprocess.TimeoutExpired:
+            chk("%s %s 能正常返回" % (label, flag), False,
+                "超时 —— 参数被忽略了, 窗口在等 (这就是要防的坑)")
+        except Exception as e:
+            chk("%s %s 能正常返回" % (label, flag), False,
+                "%s: %s" % (type(e).__name__, e))
+
+
 # ═══════════════════════════════════════════════════════════════════
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n" + "=" * 70)

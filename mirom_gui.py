@@ -12,6 +12,7 @@ mirom GUI —— 小米 ROM 下载加速器 (PySide6 + PySide6-Fluent-Widgets + 
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 
@@ -2331,6 +2332,51 @@ def main():
     shot = None
     desktop = None
     diag = None
+
+    # ── 无界面参数 ──
+    # ★ 为什么要有这两个: mirom.exe 的入口是【图形界面】, 而 --selftest / --version
+    #   是 mirom.py 的命令行参数。不加这段的话, 用户 (和自动化脚本) 敲
+    #   `mirom.exe --selftest` 会看到程序【正常弹出窗口然后一直等在那】——
+    #   参数被静默忽略, 没有任何提示, 看起来就像"卡死了"。
+    #   实测这个坑在开发过程中踩过两次, 每次都要等几百秒超时才反应过来。
+    #   现在直接在这里处理掉, 顺手把结果打到 stdout —— GUI 进程平时没有控制台,
+    #   但控制台/管道里调用时是有的。
+    if "--version" in args or "-V" in args:
+        try:
+            sys.stdout.write("mirom %s %s (Python %s)\n"
+                             % (ENGINE_VERSION, BYLINE, sys.version.split()[0]))
+            sys.stdout.flush()
+        except Exception:
+            pass
+        return 0
+    if "--selftest" in args or "--check" in args:
+        import io
+        import contextlib
+        buf = io.StringIO()
+        try:
+            from mirom import selftest
+            with contextlib.redirect_stdout(buf):
+                rc = selftest()
+        except Exception as e:
+            import traceback
+            rc = 1
+            buf.write("自检异常: %s\n%s\n" % (e, traceback.format_exc()))
+        txt = buf.getvalue()
+        try:
+            sys.stdout.write(txt)
+            sys.stdout.flush()
+        except Exception:
+            pass
+        # 没有控制台时 (双击运行 / --windowed) stdout 是 None, 那就落个文件,
+        # 免得"跑了但什么都没留下"。
+        if sys.stdout is None:
+            try:
+                p = os.path.join(tempfile.gettempdir(), "mirom_selftest.txt")
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(txt)
+            except Exception:
+                pass
+        return rc
 
     if "--diag" in args:
         i = args.index("--diag")
