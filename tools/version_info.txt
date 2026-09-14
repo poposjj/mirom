@@ -1,0 +1,36 @@
+# UTF-8
+#
+# PyInstaller 版本资源 —— 决定 EXE「属性 → 详细信息」里显示什么。
+# 用户右键看文件属性时, 这些字段就是署名最直接的位置。
+#
+# 用法: --version-file version_info.txt
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          u'080404B0',
+          [StringStruct(u'CompanyName', u'poposjj'),
+           StringStruct(u'FileDescription', u'mirom 小米 ROM 下载加速器'),
+           StringStruct(u'FileVersion', u'1.0.0.0'),
+           StringStruct(u'InternalName', u'mirom'),
+           StringStruct(u'LegalCopyright', u'Copyright (c) 2026 poposjj  (MIT License)'),
+           StringStruct(u'OriginalFilename', u'mirom.exe'),
+           StringStruct(u'ProductName', u'mirom'),
+           StringStruct(u'ProductVersion', u'1.0.0.0'),
+           # 中文注释 (0804 = 简体中文, 04B0 = Unicode)
+           StringStruct(u'Comments', u'by poposjj')])
+      ]),
+    VarFileInfo([VarStruct(u'Translation', [2052, 1200])])
+  ]
+)

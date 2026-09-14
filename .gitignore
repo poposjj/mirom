@@ -1,1 +1,39 @@
-# placeholder
+# ── 构建产物 ──
+# dist\ 有 150+ MB / 370+ 个文件, 绝对不能提交进仓库。
+# 要发布可执行文件请用 GitHub Releases (附带说明的下载入口)。
+build/
+dist/
+*.spec
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── 运行时产物 ──
+# 下载的 ROM、断点文件、崩溃日志、诊断报告都不该进仓库
+*.mirom.json
+*.mirom.json.tmp
+mirom_crash.log
+mirom_diag.txt
+.mirom_tune.json
+.mirom_gui.json
+
+# 下载下来的固件 (体积巨大)
+*.tgz
+*.zip
+!assets/*.zip
+
+# ── 编辑器 / 系统 ──
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# ── 测试临时目录 ──
+_guitest/
+_guitest2/
