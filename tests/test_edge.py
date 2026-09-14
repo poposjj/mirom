@@ -741,6 +741,52 @@ except Exception as e:
 
 
 # ═══════════════════════════════════════════════════════════════════
+sect("13. 编码: 非 UTF-8 控制台不能崩")
+# ═══════════════════════════════════════════════════════════════════
+# ★ 这是 GitHub Actions 抓出来的真 bug, 本地永远测不到:
+#     UnicodeEncodeError: 'charmap' codec can't encode characters in position 12-13
+#       File "mirom.py", line 2004, in selftest
+#         print("mirom %s 自检" % VERSION)
+#   英文版 Windows 的控制台代码页是 1252, 编不出中文 —— 于是任何一条命令都直接崩。
+#   中文版 Windows 是 936, 编得出中文, 所以本地怎么跑都正常。
+#   这就是"只有换台机器才暴露"的典型, 必须用子进程显式改掉编码来验。
+_here = os.path.dirname(os.path.abspath(__file__))
+_engine = os.path.join(os.path.dirname(_here), "mirom.py")
+for enc in ("cp1252", "ascii", "cp437", "latin-1"):
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = enc
+    env.pop("NO_COLOR", None)
+    try:
+        r = subprocess.run(
+            [sys.executable, "-u", _engine, "--selftest"],
+            capture_output=True, timeout=180, env=env,
+            cwd=os.path.dirname(_engine))
+        out = (r.stdout or b"") + (r.stderr or b"")
+        # 退出码 0 + 不能有 UnicodeEncodeError
+        bad = b"UnicodeEncodeError" in out or b"charmap" in out
+        chk("PYTHONIOENCODING=%s 下自检不崩" % enc,
+            r.returncode == 0 and not bad,
+            "exit=%s%s" % (r.returncode, " (有编码异常)" if bad else ""))
+    except subprocess.TimeoutExpired:
+        chk("PYTHONIOENCODING=%s 下自检不崩" % enc, False, "超时")
+    except Exception as e:
+        chk("PYTHONIOENCODING=%s 下自检不崩" % enc, False,
+            "%s: %s" % (type(e).__name__, e))
+
+# 顺带确认: 源码里确实有强制 UTF-8 的处理, 且是在模块级就生效的
+try:
+    import inspect as _ins13
+    _src13 = _ins13.getsource(M)
+    chk("有 _force_utf8 处理", "def _force_utf8" in _src13, "")
+    chk("模块级就调用了 _force_utf8",
+        "\n_force_utf8()" in _src13, "不能等 main() 才调")
+    chk("reconfigure 带 errors=replace",
+        'errors="replace"' in _src13, "兜底, 编不出也不能崩")
+except Exception as e:
+    chk("编码处理检查", False, "%s: %s" % (type(e).__name__, e))
+
+
+# ═══════════════════════════════════════════════════════════════════
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n" + "=" * 70)
 print("总计: PASS %d  FAIL %d" % (PASS, FAIL))

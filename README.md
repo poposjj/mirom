@@ -22,6 +22,18 @@
 
 ---
 
+---
+
+<div align="center">
+
+<img src="assets/screenshot.png" width="900" alt="mirom 界面截图：峰值 102.5 MB/s">
+
+**实测截图**：2.38 GB 的包 **1 分 25 秒**下完，峰值 **102.5 MB/s**，MD5 校验一致
+
+</div>
+
+---
+
 # 第一部分 · 使用教程与功能介绍
 
 ## 一、这个软件能干什么

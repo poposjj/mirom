@@ -113,6 +113,59 @@ def _stdout_ok():
     return so is not None and hasattr(so, "write") and hasattr(so, "isatty")
 
 
+# 改代码页之前记下原值, 供 _init_console 判断"这是不是一台老终端"。
+_ORIG_CP = None
+
+
+def _force_utf8():
+    """
+    把标准输出/错误强制切成 UTF-8 —— 必须在【任何一次输出之前】调用。
+
+    ★ CI 抓到的真 bug (GitHub Actions 的 windows-latest, 控制台代码页是 1252):
+        UnicodeEncodeError: 'charmap' codec can't encode characters in position 12-13
+          File "mirom.py", line 2004, in selftest
+            print("mirom %s 自检" % VERSION)
+      英文版 Windows 的默认代码页是 1252, 根本编不出中文 ——
+      于是【任何一条命令都直接崩】, 而 README 上白纸黑字写着支持 Windows。
+      中文版 Windows 是 936, 编得出中文, 所以本地怎么测都测不出来。
+      这正是"只有换台机器才暴露"的那类问题 —— 幸好 CI 用的是英文镜像。
+
+    两件事一起做:
+      ① Windows: 把控制台输出代码页设成 65001, 终端才会真的按 UTF-8 渲染。
+         不设的话即使我们输出 UTF-8 字节, 终端仍按 1252 解释 → 全是乱码。
+      ② 把 sys.stdout/stderr 重新配置成 UTF-8。
+         加 errors="replace" 是兜底: 万一某台机器还是编不出来, 最多显示成 ?,
+         绝不再抛 UnicodeEncodeError 把整个程序带崩 —— 崩了连提示都没有。
+
+    注意模块级就已经执行了 (见下面 _force_utf8() 的调用), 因为 COLOR/TTY 这些
+    常量在 import 期就求值了, 后面满地的 print 更早不了。
+    """
+    global _ORIG_CP
+    if IS_WIN:
+        try:
+            import ctypes
+            k = ctypes.windll.kernel32
+            _ORIG_CP = k.GetConsoleOutputCP()
+            k.SetConsoleOutputCP(65001)          # CP_UTF8
+        except Exception:
+            pass
+    for name in ("stdout", "stderr"):
+        s = getattr(sys, name, None)
+        if s is None:
+            continue                              # --windowed 下就是 None
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Python 3.6 没有 reconfigure; 或者 stdout 已被替换成别的流对象。
+            # 都无所谓 —— 只是没有这层保险, 不能因此崩掉。
+            pass
+
+
+# ⚠ 必须在这里就调, 不能等 main(): 模块导入期就有常量求值, 之后满地的
+#   print/log 更早不了。放在这一行之前是刻意的。
+_force_utf8()
+
+
 def _init_console():
     """
     初始化终端:
@@ -139,8 +192,11 @@ def _init_console():
             mode = ctypes.c_uint32()
             if k.GetConsoleMode(h, ctypes.byref(mode)):
                 k.SetConsoleMode(h, mode.value | 0x0004)
-            # 老 conhost 对全角/制表符支持差, 检测代码页
-            cp = k.GetConsoleOutputCP()
+            # 老 conhost 对全角/制表符支持差。
+            # ⚠ 这里要看【改之前】的代码页 (_ORIG_CP): _force_utf8() 已经把当前
+            #   代码页设成 65001 了, 直接查 GetConsoleOutputCP() 会永远得到 65001,
+            #   这个判断就废了。
+            cp = _ORIG_CP if _ORIG_CP is not None else k.GetConsoleOutputCP()
             if cp not in (65001, 936, 54936):
                 _UNICODE_OK = False
         except Exception:

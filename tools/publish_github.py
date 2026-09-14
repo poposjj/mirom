@@ -52,6 +52,7 @@ FILES = [
     "assets/logo_24.png",
     "assets/logo_16.png",
     "assets/logo_src.webp",
+    "assets/screenshot.png",
     "docs/使用说明.txt",
     "tests/test_edge.py",
     "tests/test_settings.py",
