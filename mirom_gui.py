@@ -12,6 +12,7 @@ mirom GUI —— 小米 ROM 下载加速器 (PySide6 + PySide6-Fluent-Widgets + 
 import json
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,8 +41,29 @@ from mirom import MiromEngine, VERSION as ENGINE_VERSION, AUTHOR, BYLINE
 # ═══════════════════════════ 设计令牌 (与引擎能力一一对应) ═══════════════════════════
 APP_NAME = "mirom"
 APP_TITLE = "小米 ROM 下载加速器"
-REPO_URL = "https://github.com/"
-README_URL = REPO_URL + "#readme"
+# ★ 帮助菜单的目标地址。
+#   之前这里是 REPO_URL = "https://github.com/" 和 README_URL = REPO_URL + "#readme"
+#   ——纯占位符: 点「使用说明」只会打开 GitHub 首页, 「常见问题」的锚点也是假的,
+#   用户点完一脸茫然, 只会觉得"帮助菜单是坏的"。现在指向真实仓库。
+REPO_URL = "https://github.com/poposjj/mirom"
+# ⚠ README_URL 必须是【不带任何 fragment 的裸地址】。
+#   第一版写成 REPO_URL + "#readme" 之后, 再拼 "#三常见问题" 就变成了
+#     https://github.com/poposjj/mirom#readme#三常见问题
+#   —— 两个 # 片段, 浏览器只认第一个, 点「常见问题」永远停在页首。
+#   要页首锚点的话用 README_TOP。
+README_URL = REPO_URL
+README_TOP = REPO_URL + "#readme"
+ISSUES_URL = REPO_URL + "/issues/new"
+RELEASES_URL = REPO_URL + "/releases"
+# 锚点规则: GitHub 会去掉标题里的标点, 用剩下的中文/字母数字做 id。
+# 例如 "## 三、常见问题" -> #三常见问题。下面是按 README 实际标题核对过的。
+ANCHOR_FAQ = "#三常见问题"
+ANCHOR_USAGE = "#二怎么用小白看这里"
+ANCHOR_HOWTO = "#第二部分--实现思路"
+ANCHOR_STRUCT = "#项目结构"
+ANCHOR_BUILD = "#自己打包"
+# 检查更新用: 仓库名 + API
+REPO_SLUG = "poposjj/mirom"
 WIN_W, WIN_H = 1280, 860
 
 C_PRIMARY      = "#0067C0"
@@ -1229,10 +1251,27 @@ class MainWindow(QMainWindow):
         menu("工具(&T)", [("运行引擎自检", None, self._run_selftest),
                           ("导出本次测速数据 CSV", None, self._export_csv), None,
                           ("诊断报告 (反馈问题时发这个)", None, self._save_diag)])
-        menu("帮助(&H)", [("使用说明", "F1", lambda: self._open_url(README_URL)),
-                          ("常见问题", None, lambda: self._open_url(README_URL + "#常见问题")),
-                          None, ("关于 mirom", None, self._about),
-                          None, ("项目主页", None, lambda: self._open_url(REPO_URL))])
+        menu("帮助(&H)", [
+            ("使用说明（本地，可离线看）", "F1", self._open_local_doc),
+            ("在线文档", None, lambda: self._open_url(README_URL, "在线文档")),
+            ("常见问题", None, lambda: self._open_url(README_URL + ANCHOR_FAQ, "常见问题")),
+            None,
+            ("它是怎么提速的（实现思路）", None,
+             lambda: self._open_url(README_URL + ANCHOR_HOWTO, "实现思路")),
+            ("项目结构说明", None,
+             lambda: self._open_url(README_URL + ANCHOR_STRUCT, "项目结构")),
+            ("自己从源码打包", None,
+             lambda: self._open_url(README_URL + ANCHOR_BUILD, "打包说明")),
+            None,
+            ("检查更新", None, self._check_update),
+            ("打开下载页（Releases）", None, lambda: self._open_url(RELEASES_URL, "下载页")),
+            ("反馈问题 / 提建议", None, lambda: self._open_url(ISSUES_URL, "反馈问题")),
+            ("项目主页", None, lambda: self._open_url(REPO_URL, "项目主页")),
+            None,
+            ("导出诊断报告（反馈时附上）", None, self._save_diag),
+            ("打开下载目录", "Ctrl+O", self._open_dir),
+            None,
+            ("关于 mirom", None, self._about)])
 
     # ---------- 链接输入区 ----------
     def _build_input(self):
@@ -1573,12 +1612,180 @@ class MainWindow(QMainWindow):
             InfoBar.error("无法打开目录", str(e), duration=3000,
                           position=InfoBarPosition.TOP_RIGHT, parent=self)
 
-    def _open_url(self, url):
+    def _open_url(self, url, label=""):
+        """
+        打开外部链接。
+
+        ★ 旧实现是 `try: webbrowser.open(url) except: pass` —— 三种失败全被吞掉:
+          没有默认浏览器、被安全软件拦、webbrowser 返回 False 但没抛异常。
+          用户点了菜单什么都没发生, 只能认为"这功能是坏的"。
+          现在打不开就把链接【摆在用户面前】并复制到剪贴板, 让他自己粘。
+        """
+        ok = False
+        err = ""
         try:
-            import webbrowser
-            webbrowser.open(url)
+            if sys.platform.startswith("win"):
+                # Windows 上 startfile 走 ShellExecute, 比 webbrowser 可靠
+                # (webbrowser 在没有默认浏览器时会静默返回 False)
+                os.startfile(url)
+                ok = True
+            elif sys.platform == "darwin":
+                import subprocess
+                ok = subprocess.call(["open", url]) == 0
+            else:
+                import webbrowser
+                ok = bool(webbrowser.open(url))
+        except Exception as e:
+            err = "%s: %s" % (type(e).__name__, e)
+
+        if ok:
+            return True
+        self._url_fallback(url, label, err)
+        return False
+
+    def _url_fallback(self, url, label, err=""):
+        """打不开浏览器时的兜底: 把链接显示出来 + 复制到剪贴板。"""
+        try:
+            QApplication.clipboard().setText(url)
+            copied = "（链接已复制到剪贴板）"
         except Exception:
-            pass
+            copied = ""
+        body = ("没能打开浏览器%s\n\n"
+                "要打开的内容：%s\n\n%s\n%s\n\n"
+                "可以手动把上面的链接粘到浏览器里。"
+                % (("：%s" % err) if err else "（可能没有设置默认浏览器）",
+                   label or "链接", url, copied))
+        box = MessageBox("打不开浏览器", body, self)
+        box.yesButton.setText("知道了")
+        box.cancelButton.hide()
+        box.exec()
+
+    def _open_local_doc(self):
+        """
+        打开本地使用说明。
+
+        ★ 为什么优先本地: 帮助文档应该【离线可用】。
+          用户卡住的时候往往正因为网络/下载出问题, 这时候把他甩到网页上是最差的体验。
+          本地找不到才退回在线 README。
+        """
+        for p in self._doc_candidates():
+            if os.path.exists(p):
+                try:
+                    if sys.platform.startswith("win"):
+                        os.startfile(p)
+                    elif sys.platform == "darwin":
+                        import subprocess
+                        subprocess.call(["open", p])
+                    else:
+                        import subprocess
+                        subprocess.call(["xdg-open", p])
+                    return True
+                except Exception:
+                    break
+        # 本地没有 -> 退到在线
+        return self._open_url(README_URL + ANCHOR_USAGE, "在线使用说明")
+
+    def _doc_candidates(self):
+        """使用说明可能在哪几个位置 (打包/源码、同级/docs 都试一遍)。"""
+        out = []
+        names = ("使用说明.txt",)
+        bases = []
+        if getattr(sys, "frozen", False):
+            bases.append(os.path.dirname(sys.executable))
+        bases.append(os.path.dirname(os.path.abspath(__file__)))
+        bases.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for b in bases:
+            for n in names:
+                out.append(os.path.join(b, n))
+                out.append(os.path.join(b, "docs", n))
+        seen, uniq = set(), []
+        for p in out:
+            if p not in seen:
+                seen.add(p)
+                uniq.append(p)
+        return uniq
+
+    def _check_update(self):
+        """
+        检查有没有新版本。
+
+        ★ 网络请求必须放后台线程: 在主线程里发 HTTP 会把界面冻住 ——
+          用户在等一个"检查更新"的时候窗口没反应, 会以为程序死了。
+          旧版帮助菜单里根本没有这个功能, 只有三个指向占位地址的链接。
+        """
+        self._append_log("[%s] 正在检查更新…" % time.strftime("%H:%M:%S"), C_GRAY)
+        w = self
+
+        class _Upd(QObject):
+            done = Signal(dict)
+
+        self._upd = _Upd()
+        self._upd.done.connect(self._on_update_result)
+
+        def work():
+            info = {"ok": False, "err": "", "latest": "", "url": RELEASES_URL, "notes": ""}
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    "https://api.github.com/repos/%s/releases/latest" % REPO_SLUG)
+                req.add_header("User-Agent", "mirom-update-check")
+                req.add_header("Accept", "application/vnd.github+json")
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    import json as _json
+                    d = _json.loads(r.read().decode("utf-8"))
+                info["ok"] = True
+                info["latest"] = (d.get("tag_name") or "").lstrip("v")
+                info["url"] = d.get("html_url") or RELEASES_URL
+                info["notes"] = (d.get("body") or "")[:400]
+            except Exception as e:
+                info["err"] = "%s: %s" % (type(e).__name__, e)
+            try:
+                w._upd.done.emit(info)
+            except Exception:
+                pass                      # 窗口已销毁就别再发了
+
+        threading.Thread(target=work, daemon=True, name="mirom-update").start()
+
+    def _on_update_result(self, info):
+        ts = time.strftime("%H:%M:%S")
+        if not info.get("ok"):
+            self._append_log("[%s] 检查更新失败: %s" % (ts, info.get("err", "?")), C_ORANGE)
+            box = MessageBox("检查更新失败",
+                             "没能连上 GitHub。\n\n%s\n\n"
+                             "可以手动到项目主页看看有没有新版本：\n%s"
+                             % (info.get("err", ""), RELEASES_URL), self)
+            box.yesButton.setText("打开下载页")
+            box.cancelButton.setText("关闭")
+            if box.exec():
+                self._open_url(RELEASES_URL, "下载页")
+            return
+
+        cur = ENGINE_VERSION
+        latest = info.get("latest") or ""
+        self._append_log("[%s] 最新版本: %s (当前 %s)" % (ts, latest or "?", cur), C_GRAY)
+
+        def ver_tuple(s):
+            try:
+                return tuple(int(x) for x in str(s).split(".")[:4])
+            except Exception:
+                return (0,)
+
+        if latest and ver_tuple(latest) > ver_tuple(cur):
+            box = MessageBox("发现新版本",
+                             "当前版本：%s\n最新版本：%s\n\n%s"
+                             % (cur, latest, info.get("notes", "")), self)
+            box.yesButton.setText("去下载")
+            box.cancelButton.setText("以后再说")
+            if box.exec():
+                self._open_url(info.get("url") or RELEASES_URL, "新版本下载页")
+        else:
+            box = MessageBox("已是最新版本",
+                             "当前版本 %s，已经是最新的了。\n\n"
+                             "项目主页：%s" % (cur, REPO_URL), self)
+            box.yesButton.setText("知道了")
+            box.cancelButton.setText("打开项目主页")
+            if box.exec():
+                self._open_url(REPO_URL, "项目主页")
 
     def _open_tune(self):
         p = os.path.join(os.path.expanduser("~"), ".mirom_tune.json")

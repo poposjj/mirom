@@ -1,0 +1,104 @@
+name: 问题反馈
+description: 报告一个 bug 或异常行为
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！为了能快速定位，请把下面几项填一下。
+
+        **最快的办法**：先跑一次诊断，把生成的文件贴上来。
+        > 软件里点「工具 → 诊断报告」，或命令行跑 `mirom.exe --diag 报告.txt`
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你点了什么、期望发生什么、实际发生了什么
+      placeholder: |
+        我点了「开始下载」，期望它开始下载，
+        结果进度条一直停在 0% 不动，日志里显示……
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 能稳定复现的话，请写清楚每一步
+      placeholder: |
+        1. 粘贴链接 https://...
+        2. 点「开始下载」
+        3. 等 30 秒
+        4. 看到 xxx
+    validations:
+      required: true
+
+  - type: textarea
+    id: diag
+    attributes:
+      label: 诊断报告
+      description: |
+        「工具 → 诊断报告」生成的 mirom_diag.txt 内容，直接粘贴进来。
+        里面有版本、系统信息、引擎自检结果 —— 大部分问题看一眼这个就能定位。
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: 运行日志
+      description: |
+        软件右下角「运行日志」区的内容。「编辑 → 复制全部日志」可以一次复制完。
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: rom-url
+    attributes:
+      label: 涉及的 ROM 链接
+      description: 出问题的那条下载链接（如果方便提供）
+      placeholder: https://bigota.d.miui.com/...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: 软件版本
+      description: 「帮助 → 关于」里能看到
+      options:
+        - 1.0.0
+        - 其他（请在下面补充）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: 怎么运行的
+      options:
+        - 下载的 exe 包（解压双击）
+        - 从源码跑（python mirom_gui.py）
+        - 命令行模式（python mirom.py）
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: Windows 11 23H2 64 位 / Ubuntu 24.04 / macOS 14
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 截图、你猜测的原因、试过什么办法……都可以写在这里
+    validations:
+      required: false

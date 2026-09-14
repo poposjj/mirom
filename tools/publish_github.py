@@ -29,8 +29,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 要上传的文件 (相对仓库根 -> 本地路径)
 FILES = [
     ".gitignore",
+    ".github/workflows/build.yml",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/ISSUE_TEMPLATE/feature_request.yml",
+    ".github/ISSUE_TEMPLATE/config.yml",
+    ".github/PULL_REQUEST_TEMPLATE.md",
     "LICENSE",
     "README.md",
+    "CHANGELOG.md",
+    "requirements.txt",
     "mirom.py",
     "mirom_gui.py",
     "vdesk.py",
@@ -50,6 +57,7 @@ FILES = [
     "tests/test_settings.py",
     "tests/test_gui_buttons.py",
     "tools/打包.bat",
+    "tools/build.py",
     "tools/make_logo.py",
     "tools/version_info.txt",
     "tools/publish_github.py",

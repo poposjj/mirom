@@ -1,0 +1,144 @@
+name: 构建与发布
+
+# 触发时机:
+#   · 推 tag (v1.0.0 这种)  -> 完整走一遍并【自动发 Release】
+#   · 推到 main             -> 只构建 + 上传 artifact, 不动 Release
+#   · 手动触发              -> 可以在 Actions 页面点按钮跑, 也能选只测不打包
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      make_release:
+        description: '同时创建 Release (仅手动触发时有效)'
+        type: boolean
+        default: false
+
+# 同一分支只跑最新一次, 避免连续推送时排队堆积。
+# ⚠ tag 构建不能被取消 —— 取消到一半可能留下半个 Release。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: write        # 发 Release 需要
+
+jobs:
+  # ── 第一关: 纯逻辑测试 (快, 不联网) ──
+  #   故意和构建分开: 测试挂了就不该浪费 5 分钟去打一个注定有问题的包。
+  test:
+    name: 测试 (Python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.8 是"兼容低版本"的下界, 3.12 是实际打包用的版本。
+        # 两个都测, 免得用了新语法却宣称支持 3.6+。
+        python: ['3.8', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 引擎自检
+        run: python mirom.py --selftest
+
+      - name: 边界条件测试 (108 项, 不联网)
+        run: python tests/test_edge.py
+
+      - name: 设置与 GUI 流程测试 (不联网)
+        run: python tests/test_settings.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  # ── 第二关: 打包 ──
+  build:
+    name: 打包 EXE
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      # 打包参数只在 tools/build.py 里写一份, 本地和 CI 共用 ——
+      # 免得两边漂移(本地排掉一个 Qt 模块, CI 打出来的包就不一样了)。
+      - name: 打包 (含图标生成 + 资源完整性校验)
+        run: python tools/build.py --zip
+
+      # 打包完立刻从产物本身再验一遍, 而不是只信构建没报错。
+      - name: 验证产物
+        run: |
+          $exe = "dist\mirom\mirom.exe"
+          if (-not (Test-Path $exe)) { throw "没有生成 mirom.exe" }
+          $vi = (Get-Item $exe).VersionInfo
+          Write-Host "公司: $($vi.CompanyName)"
+          Write-Host "说明: $($vi.FileDescription)"
+          Write-Host "版本: $($vi.FileVersion)"
+          if ($vi.CompanyName -ne 'poposjj') { throw "EXE 属性页缺少作者信息" }
+          # 图标必须是多帧的 —— 单帧的话任务栏小图标会糊
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $sig = [byte[]](0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A)
+          $n = 0
+          for ($i = 0; $i -lt $bytes.Length - 8; $i++) {
+            $m = $true
+            for ($k = 0; $k -lt 8; $k++) { if ($bytes[$i+$k] -ne $sig[$k]) { $m = $false; break } }
+            if ($m) { $n++; $i += 7 }
+          }
+          Write-Host "内嵌图标帧数: $n"
+          if ($n -lt 5) { throw "图标帧数不足 ($n), 任务栏图标会糊" }
+          $empty = Get-ChildItem "dist\mirom\_internal\assets" | Where-Object { $_.Length -eq 0 }
+          if ($empty) { throw "assets 里有 0 字节文件: $($empty.Name -join ', ')" }
+          Write-Host "产物验证通过"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirom-win64
+          path: |
+            dist/mirom-*-win64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # ── 发 Release ──
+      #   只在推 tag (或手动勾选) 时执行。
+      #   用 gh 命令行而不是第三方 action: gh 是 runner 自带的, 少一个供应链风险点。
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ("${{ inputs.make_release }}" -eq "true" -and -not $tag.StartsWith("v")) {
+            $tag = "v1.0.0"
+          }
+          Write-Host "目标 tag: $tag"
+          $zip = Get-ChildItem "dist\mirom-*-win64.zip" | Select-Object -First 1
+          if (-not $zip) { throw "找不到 zip" }
+          # tag 已存在就跳过创建 (允许重跑), 否则新建
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $zip.FullName --title "mirom $tag  by poposjj" --generate-notes
+          } else {
+            gh release upload $tag $zip.FullName --clobber
+          }
+          Write-Host "Release 完成: $tag"

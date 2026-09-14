@@ -72,9 +72,25 @@ def make_zip():
     return out
 
 
-def upload_asset(upload_url, path):
+def upload_asset(rel, path):
+    """
+    上传（或替换）附件。
+
+    ★ 必须处理"同名附件已存在": 版本号不变、只是重新构建时, 附件名是一样的,
+      GitHub 会直接返回 422 already_exists。所以要先删掉旧的那个再传 ——
+      删了再传才有更新效果, 否则用户下到的还是上一版 exe。
+    """
     name = os.path.basename(path)
     size = os.path.getsize(path)
+    upload_url = rel["upload_url"]
+
+    # 先清掉同名旧附件
+    for a in rel.get("assets", []) or []:
+        if a.get("name") == name:
+            print("  替换已存在的附件: %s (旧 %d 字节)" % (name, a.get("size", 0)))
+            call("DELETE", "/repos/%s/releases/assets/%d" % (REPO, a["id"]),
+                 ok=(200, 204))
+
     url = upload_url.replace("{?name,label}", "?name=%s" % urllib.parse.quote(name))
     print("  上传 %s (%.1f MB)..." % (name, size / 1048576.0))
     t0 = time.time()
@@ -164,7 +180,7 @@ def main():
         rel = call("GET", "/repos/%s/releases/tags/%s" % (REPO, TAG))
         print("  Release 已存在, 复用它: %s" % rel["html_url"])
 
-    upload_asset(rel["upload_url"], zip_path)
+    upload_asset(rel, zip_path)
     print("\n" + "=" * 62)
     print("  完成!  https://github.com/%s/releases" % REPO)
     print("=" * 62)

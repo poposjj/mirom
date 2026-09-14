@@ -565,6 +565,115 @@ except Exception as e:
     chk("图标接线", False, "%s: %s" % (type(e).__name__, e))
     traceback.print_exc()
 
+print()
+print("=" * 72)
+print("11. 帮助菜单: 每一项都必须指向真实目标")
+print("=" * 72)
+# 用户报的 bug: "软件菜单的帮助二级菜单内功能未完善"。
+# 根因是 REPO_URL 一直是占位符 "https://github.com/", README_URL 是它的 "#readme" ——
+# 点「使用说明」只会打开 GitHub 首页, 「常见问题」的锚点也是编的。
+# 更糟的是 _open_url 里 `except: pass` 把所有失败都吞了, 用户点完什么都没发生。
+try:
+    from PySide6.QtWidgets import QMenu
+
+    chk("REPO_URL 不是占位符",
+        G.REPO_URL.rstrip("/") != "https://github.com", G.REPO_URL)
+    chk("REPO_URL 指向真实仓库",
+        "poposjj/mirom" in G.REPO_URL, G.REPO_URL)
+    for nm, u in (("README_URL", G.README_URL), ("ISSUES_URL", G.ISSUES_URL),
+                  ("RELEASES_URL", G.RELEASES_URL)):
+        chk("%s 指向仓库内页面" % nm, "poposjj/mirom" in u, u)
+    chk("issues 地址正确", G.ISSUES_URL.endswith("/issues/new"), G.ISSUES_URL)
+    chk("releases 地址正确", G.RELEASES_URL.endswith("/releases"), G.RELEASES_URL)
+
+    # 锚点必须是以 # 开头的非空片段, 且不能是空壳 "#readme"
+    for nm, a in (("常见问题", G.ANCHOR_FAQ), ("使用教程", G.ANCHOR_USAGE),
+                  ("实现思路", G.ANCHOR_HOWTO), ("项目结构", G.ANCHOR_STRUCT),
+                  ("自己打包", G.ANCHOR_BUILD)):
+        chk("锚点 %s 形如 #xxx" % nm, a.startswith("#") and len(a) > 2, a)
+
+    # ★ 拼起来的完整地址只能有【一个】#。
+    #   第一版 README_URL 自带 "#readme", 再拼锚点就成了
+    #   ".../mirom#readme#三常见问题" —— 浏览器只认第一个 #, 点击永远停在页首。
+    #   这种错误肉眼很难发现, 必须断言。
+    for nm, a in (("常见问题", G.ANCHOR_FAQ), ("使用教程", G.ANCHOR_USAGE),
+                  ("实现思路", G.ANCHOR_HOWTO), ("项目结构", G.ANCHOR_STRUCT),
+                  ("自己打包", G.ANCHOR_BUILD)):
+        full = G.README_URL + a
+        chk("完整地址 %s 只有一个 #" % nm, full.count("#") == 1, full)
+        chk("完整地址 %s 以锚点结尾" % nm, full.endswith(a), full)
+    chk("README_URL 自身不带 fragment", "#" not in G.README_URL, G.README_URL)
+    chk("README_TOP 恰好一个 #", G.README_TOP.count("#") == 1, G.README_TOP)
+
+    # 遍历帮助菜单: 每个动作都得有回调, 且 URL 类目标不能是裸 github.com
+    w = G.MainWindow()
+    help_menu = None
+    for m in w.menuBar().findChildren(QMenu):
+        if "帮助" in m.title():
+            help_menu = m
+            break
+    chk("找到帮助菜单", help_menu is not None, "")
+    if help_menu:
+        items, no_cb = [], []
+        for a in help_menu.actions():
+            if a.isSeparator():
+                continue
+            items.append(a.text())
+            try:
+                n = a.receivers("2triggered(bool)")
+            except Exception:
+                n = 1
+            if not n:
+                no_cb.append(a.text())
+        chk("帮助菜单没有死项", not no_cb, "共 %d 项; 死项: %s" % (len(items), no_cb or "无"))
+        chk("帮助菜单项足够完整 (>=10)", len(items) >= 10, "%d 项" % len(items))
+        for want in ("使用说明（本地，可离线看）", "常见问题", "检查更新",
+                     "打开下载页（Releases）", "反馈问题 / 提建议", "项目主页",
+                     "它是怎么提速的（实现思路）", "导出诊断报告（反馈时附上）"):
+            chk("帮助菜单含「%s」" % want, want in items, "")
+        # 反向检查: 不允许再出现占位地址。
+        # ⚠ 只看【非注释行】—— 上面那段解释"以前是占位符"的注释里本身就带着
+        #   那个字符串, 直接全文匹配会被自己的注释误伤 (第一版就是这么挂的)。
+        import inspect as _i11
+        src = _i11.getsource(G)
+        code_lines = []
+        for ln in src.splitlines():
+            s = ln.strip()
+            if s.startswith("#") or s.startswith('"') or s.startswith("'"):
+                continue
+            code_lines.append(ln)
+        code = "\n".join(code_lines)
+        chk("源码里没有裸 github.com 占位地址",
+            '"https://github.com/"' not in code.replace("'", '"'), "")
+
+    # 使用说明必须能找到本地文件 (帮助应当离线可用)
+    cands = w._doc_candidates()
+    chk("使用说明候选路径非空", len(cands) >= 2, "%d 个候选" % len(cands))
+    found = [p for p in cands if os.path.exists(p)]
+    chk("本地能定位到使用说明.txt", bool(found),
+        found[0] if found else "候选: %s" % cands[:3])
+
+    # 打不开浏览器时必须给出兜底提示, 不能静默
+    import inspect as _i11b
+    s = _i11b.getsource(G.MainWindow._open_url)
+    chk("_open_url 失败时不再静默吞掉", "_url_fallback" in s, "")
+    chk("_open_url 没有裸 except: pass",
+        not (s.count("except") and s.count("pass") >= s.count("except")), "")
+    chk("_url_fallback 会把链接给用户",
+        "clipboard" in _i11b.getsource(G.MainWindow._url_fallback), "")
+
+    # 检查更新: 网络请求必须在后台线程 (主线程发 HTTP 会把界面冻住)
+    su = _i11b.getsource(G.MainWindow._check_update)
+    chk("检查更新走后台线程", "Thread(" in su or "threading" in su, "")
+    chk("检查更新的线程是 daemon",
+        "daemon=True" in su, "否则关窗口后线程会吊住进程")
+
+    w.deleteLater()
+except Exception as e:
+    import traceback
+    chk("帮助菜单接线", False, "%s: %s" % (type(e).__name__, e))
+    traceback.print_exc()
+
 import shutil
 shutil.rmtree(TMP, ignore_errors=True)
 print()

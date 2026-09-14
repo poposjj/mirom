@@ -1,0 +1,51 @@
+name: 功能建议
+description: 想要一个新功能，或对现有行为有改进想法
+title: "[建议] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提建议。说清楚**你想解决什么问题**比列出想加什么按钮更有用 ——
+        有时候换个做法就能绕过，而且更简单。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题
+      description: 现在哪里不好用？为什么让你觉得别扭？
+      placeholder: |
+        我经常要下同一个机型的多个版本，现在得一个一个手动粘贴链接，
+        中间还得等着，很费时间。
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你希望怎么做
+      description: 你设想的界面或行为
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 你现在是怎么绕过的
+      description: 如果有临时办法，写在这里 —— 这能帮我判断优先级
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及哪一块
+      options:
+        - 下载速度 / 选路
+        - 界面与交互
+        - 断点续传
+        - 命令行参数
+        - 文档说明
+        - 其他
+    validations:
+      required: true

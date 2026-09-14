@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题 / 不知道怎么用
+    url: https://github.com/poposjj/mirom/tree/main/docs
+    about: 先看《使用说明》—— 覆盖了下载、设置、续传、常见问题，大部分疑问里面都有
+
+  - name: 下载太慢 / 卡住不动
+    url: https://github.com/poposjj/mirom#三常见问题
+    about: 常见问题里解释了速度波动、卡在 0%、进度条到 100% 还在跑这几种情况
