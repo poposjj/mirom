@@ -10,6 +10,7 @@ GUI 设置系统测试 —— 重点验"配置文件被写坏时界面不能崩"
 """
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -586,19 +587,42 @@ try:
     chk("issues 地址正确", G.ISSUES_URL.endswith("/issues/new"), G.ISSUES_URL)
     chk("releases 地址正确", G.RELEASES_URL.endswith("/releases"), G.RELEASES_URL)
 
+    ANCHORS = (("常见问题", G.ANCHOR_FAQ), ("使用教程", G.ANCHOR_USAGE),
+               ("内部实现", G.ANCHOR_HOWTO), ("实测记录", G.ANCHOR_BG),
+               ("项目结构", G.ANCHOR_STRUCT), ("打包说明", G.ANCHOR_BUILD))
+
     # 锚点必须是以 # 开头的非空片段, 且不能是空壳 "#readme"
-    for nm, a in (("常见问题", G.ANCHOR_FAQ), ("使用教程", G.ANCHOR_USAGE),
-                  ("实现思路", G.ANCHOR_HOWTO), ("项目结构", G.ANCHOR_STRUCT),
-                  ("自己打包", G.ANCHOR_BUILD)):
+    for nm, a in ANCHORS:
         chk("锚点 %s 形如 #xxx" % nm, a.startswith("#") and len(a) > 2, a)
+
+    # ★★ 锚点必须能在 README.md 里找到【对应标题】。
+    #    这条是补的, 因为只验格式完全查不出死链 —— README 改版重写标题之后,
+    #    6 个锚点里 5 个失效了, 而失效的表现只是"点击跳到页面顶部",
+    #    不报错、不异常, 格式断言全绿。必须拿真实标题去对。
+    def _gh_slug(text):
+        """复刻 GitHub 的标题锚点算法: 转小写 -> 去标点 -> 空格转连字符。"""
+        s = text.strip().lower()
+        s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)   # \\w 已含中文
+        return re.sub(r"\s+", "-", s).strip("-")
+
+    _readme = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "README.md")
+    chk("能找到 README.md", os.path.exists(_readme), _readme)
+    if os.path.exists(_readme):
+        with open(_readme, encoding="utf-8") as _f:
+            _heads = [_gh_slug(ln.lstrip("#").strip())
+                      for ln in _f.read().splitlines() if ln.startswith("#")]
+        for nm, a in ANCHORS:
+            _want = _gh_slug(a.lstrip("#"))
+            chk("锚点 %s 在 README 里有对应标题" % nm, _want in _heads,
+                "%s -> %s" % (a, "找到" if _want in _heads else "找不到，候选: %s"
+                              % _heads[:6]))
 
     # ★ 拼起来的完整地址只能有【一个】#。
     #   第一版 README_URL 自带 "#readme", 再拼锚点就成了
-    #   ".../mirom#readme#三常见问题" —— 浏览器只认第一个 #, 点击永远停在页首。
+    #   ".../mirom#readme#常见问题" —— 浏览器只认第一个 #, 点击永远停在页首。
     #   这种错误肉眼很难发现, 必须断言。
-    for nm, a in (("常见问题", G.ANCHOR_FAQ), ("使用教程", G.ANCHOR_USAGE),
-                  ("实现思路", G.ANCHOR_HOWTO), ("项目结构", G.ANCHOR_STRUCT),
-                  ("自己打包", G.ANCHOR_BUILD)):
+    for nm, a in ANCHORS:
         full = G.README_URL + a
         chk("完整地址 %s 只有一个 #" % nm, full.count("#") == 1, full)
         chk("完整地址 %s 以锚点结尾" % nm, full.endswith(a), full)
@@ -627,10 +651,15 @@ try:
                 no_cb.append(a.text())
         chk("帮助菜单没有死项", not no_cb, "共 %d 项; 死项: %s" % (len(items), no_cb or "无"))
         chk("帮助菜单项足够完整 (>=10)", len(items) >= 10, "%d 项" % len(items))
-        for want in ("使用说明（本地，可离线看）", "常见问题", "检查更新",
-                     "打开下载页（Releases）", "反馈问题 / 提建议", "项目主页",
-                     "它是怎么提速的（实现思路）", "导出诊断报告（反馈时附上）"):
-            chk("帮助菜单含「%s」" % want, want in items, "")
+        for want in ("离线使用说明", "在线文档", "使用教程", "常见问题",
+                     "内部实现", "实测记录", "项目结构", "打包说明",
+                     "检查更新", "打开下载页", "反馈问题 / 提建议", "项目主页",
+                     "导出诊断报告", "打开下载目录", "关于 mirom"):
+            chk("帮助菜单含「%s」" % want, any(want in it for it in items), "")
+        # 菜单文案里不允许出现口语化括号注释 —— 和 README 的措辞要求保持一致
+        for it in items:
+            if "（" in it or "(" in it:
+                chk("菜单项无括号注释: %s" % it, False, it)
         # 反向检查: 不允许再出现占位地址。
         # ⚠ 只看【非注释行】—— 上面那段解释"以前是占位符"的注释里本身就带着
         #   那个字符串, 直接全文匹配会被自己的注释误伤 (第一版就是这么挂的)。

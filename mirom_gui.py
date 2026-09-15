@@ -56,13 +56,17 @@ README_URL = REPO_URL
 README_TOP = REPO_URL + "#readme"
 ISSUES_URL = REPO_URL + "/issues/new"
 RELEASES_URL = REPO_URL + "/releases"
-# 锚点规则: GitHub 会去掉标题里的标点, 用剩下的中文/字母数字做 id。
-# 例如 "## 三、常见问题" -> #三常见问题。下面是按 README 实际标题核对过的。
-ANCHOR_FAQ = "#三常见问题"
-ANCHOR_USAGE = "#二怎么用小白看这里"
-ANCHOR_HOWTO = "#第二部分--实现思路"
+# 锚点规则: GitHub 会去掉标题里的标点与空格, 剩下的中文/字母数字做 id。
+#   "## 常见问题" -> #常见问题
+# ⚠ 这几个值必须和 README.md 的标题【逐字对应】。
+#   改 README 标题时这里要一起改 —— 否则帮助菜单会跳到页面顶部而不是对应章节:
+#   链接本身不会报错, 只是默默失效 (实测踩过, README 改版后 5 个锚点废了 4 个)。
+ANCHOR_USAGE = "#使用"
+ANCHOR_FAQ = "#常见问题"
+ANCHOR_HOWTO = "#内部实现"
+ANCHOR_BG = "#这些结论是怎么来的"
 ANCHOR_STRUCT = "#项目结构"
-ANCHOR_BUILD = "#自己打包"
+ANCHOR_BUILD = "#打包"
 # 检查更新用: 仓库名 + API
 REPO_SLUG = "poposjj/mirom"
 WIN_W, WIN_H = 1280, 860
@@ -1253,23 +1257,28 @@ class MainWindow(QMainWindow):
                           ("导出本次测速数据 CSV", None, self._export_csv), None,
                           ("诊断报告 (反馈问题时发这个)", None, self._save_diag)])
         menu("帮助(&H)", [
-            ("使用说明（本地，可离线看）", "F1", self._open_local_doc),
+            ("离线使用说明", "F1", self._open_local_doc),
             ("在线文档", None, lambda: self._open_url(README_URL, "在线文档")),
-            ("常见问题", None, lambda: self._open_url(README_URL + ANCHOR_FAQ, "常见问题")),
+            ("使用教程", None,
+             lambda: self._open_url(README_URL + ANCHOR_USAGE, "使用教程")),
+            ("常见问题", None,
+             lambda: self._open_url(README_URL + ANCHOR_FAQ, "常见问题")),
             None,
-            ("它是怎么提速的（实现思路）", None,
-             lambda: self._open_url(README_URL + ANCHOR_HOWTO, "实现思路")),
-            ("项目结构说明", None,
+            ("内部实现", None,
+             lambda: self._open_url(README_URL + ANCHOR_HOWTO, "内部实现")),
+            ("实测记录", None,
+             lambda: self._open_url(README_URL + ANCHOR_BG, "实测记录")),
+            ("项目结构", None,
              lambda: self._open_url(README_URL + ANCHOR_STRUCT, "项目结构")),
-            ("自己从源码打包", None,
+            ("打包说明", None,
              lambda: self._open_url(README_URL + ANCHOR_BUILD, "打包说明")),
             None,
             ("检查更新", None, self._check_update),
-            ("打开下载页（Releases）", None, lambda: self._open_url(RELEASES_URL, "下载页")),
+            ("打开下载页", None, lambda: self._open_url(RELEASES_URL, "下载页")),
             ("反馈问题 / 提建议", None, lambda: self._open_url(ISSUES_URL, "反馈问题")),
             ("项目主页", None, lambda: self._open_url(REPO_URL, "项目主页")),
             None,
-            ("导出诊断报告（反馈时附上）", None, self._save_diag),
+            ("导出诊断报告", None, self._save_diag),
             ("打开下载目录", "Ctrl+O", self._open_dir),
             None,
             ("关于 mirom", None, self._about)])
