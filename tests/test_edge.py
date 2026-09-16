@@ -858,6 +858,76 @@ for flag, want in (("--version", "mirom"), ("--selftest", "PASS")):
 
 
 # ═══════════════════════════════════════════════════════════════════
+sect("14. 自检的报告质量")
+# ═══════════════════════════════════════════════════════════════════
+# 打包后实测发现的缺陷: 静态体检要读 .py 源码, 而冻结成 EXE 之后源码在 PYZ 里,
+# 磁盘上没有对应文件。旧实现直接 continue, 于是报告里那段只剩一行标题 ——
+# 用户看到的是个空段落, 会以为自检坏了; 而结论照样打"全部通过",
+# 因为那几项根本没进统计。丢的是"没跑", 报的却是"通过"。
+def _run_selftest_capture(mutate_file=None):
+    """在内存里跑一次自检, 返回 (rc, 输出文本, 结构化结果)。"""
+    import io
+    import contextlib
+    if mutate_file is not None:
+        _orig = M.__file__
+        M.__file__ = mutate_file
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = M.selftest()
+        return rc, buf.getvalue(), dict(M.SELFTEST_RESULT)
+    finally:
+        if mutate_file is not None:
+            M.__file__ = _orig
+
+
+_rc, _out, _res = _run_selftest_capture()
+chk("自检返回 0", _rc == 0, "rc=%d" % _rc)
+chk("有结构化结果 SELFTEST_RESULT", bool(_res), "%d 个字段" % len(_res))
+chk("计数自洽: total == passed + skipped + failed",
+    _res.get("total") == _res.get("passed", 0) + _res.get("skipped", 0)
+    + _res.get("failed", 0),
+    "total=%s passed=%s skipped=%s failed=%s"
+    % (_res.get("total"), _res.get("passed"), _res.get("skipped"), _res.get("failed")))
+chk("结果里带 ok 字段", _res.get("ok") is True, "")
+chk("输出里有计数汇总行", "共 %d 项" % _res.get("total", 0) in _out,
+    [l for l in _out.splitlines() if "共 " in l and "项" in l][:1])
+
+# 源码模式下静态体检应当全部真跑, 不该有跳过
+chk("源码模式下没有跳过项", _res.get("skipped") == 0,
+    "skipped=%s" % _res.get("skipped"))
+chk("静态体检 3 个文件都跑了",
+    sum(1 for k in ("mirom.py 无未定义名", "mirom_gui.py 无未定义名",
+                    "vdesk.py 无未定义名") if k not in (_res.get("fails") or [])) == 3,
+    "")
+
+# 模拟冻结环境: __file__ 指向一个没有 .py 的目录
+_fake = os.path.join(TMP, "_pyz", "mirom.py")
+os.makedirs(os.path.dirname(_fake), exist_ok=True)
+_rc2, _out2, _res2 = _run_selftest_capture(mutate_file=_fake)
+chk("冻结环境下自检仍返回 0", _rc2 == 0, "rc=%d" % _rc2)
+chk("冻结环境下跳过项被计数", _res2.get("skipped") == 3,
+    "skipped=%s" % _res2.get("skipped"))
+chk("冻结环境下通过数相应减少",
+    _res2.get("passed") == _res.get("passed") - 3,
+    "%s -> %s" % (_res.get("passed"), _res2.get("passed")))
+chk("跳过项带原因", all(w for _n, w in (_res2.get("skips") or [])),
+    str((_res2.get("skips") or [])[:1]))
+chk("输出里出现 SKIP 字样", "SKIP" in _out2, "")
+chk("输出里列出跳过清单", "跳过的项:" in _out2, "")
+chk("结论如实说明有未执行项", "未执行" in _out2,
+    [l for l in _out2.splitlines() if "全部通过" in l][:1])
+# 关键: 那段不能是空的 —— 旧实现只留一行标题
+_i = _out2.find("[静态体检")
+_seg = _out2[_i:_out2.find("[记账", _i)] if _i >= 0 else ""
+chk("静态体检段落非空 (旧实现只留一行标题)",
+    _seg.count("SKIP") == 3, "该段 %d 字符, SKIP %d 处" % (len(_seg), _seg.count("SKIP")))
+
+# 自检结束后不能污染全局
+chk("自检未污染 HOOKS['cancelled']", M.HOOKS.get("cancelled") is None, "")
+
+
+# ═══════════════════════════════════════════════════════════════════
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n" + "=" * 70)
 print("总计: PASS %d  FAIL %d" % (PASS, FAIL))

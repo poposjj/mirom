@@ -71,6 +71,23 @@ ANCHOR_BUILD = "#打包"
 REPO_SLUG = "poposjj/mirom"
 WIN_W, WIN_H = 1280, 860
 
+# ═══════════════════════════ 公告栏内容 ═══════════════════════════
+# ⚠ 这里的文案随版本更新, 要和 CHANGELOG.md 的对应版本保持一致。
+#
+# 关于 ROM_SITE: 这是第三方 ROM 索引站点, 与小米 CDN 无关, 也不参与任何下载逻辑 ——
+# 界面上只提供一个入口, 不抓取、不解析、不预填。下载走的始终是小米官方域名。
+ROM_SITE = "https://xiaomirom.com/"
+ROM_SITE_NAME = "小米 ROM 下载站"
+ANNOUNCE_ITEMS = [
+    "打包运行时，「未定义名」静态检查无法读取源码。此前该段落只输出一行标题，"
+    "不显示任何内容也不说明原因，容易被误认为自检异常。现在会逐项标注"
+    "跳过状态与原因。",
+    "自检结束时新增计数汇总：通过 / 跳过 / 失败三项分别列出。"
+    "在此之前只有「全部通过」四个字，无法判断一共执行了多少项、是否有项目未执行。",
+    "界面侧的自检结果改为读取结构化数据。原实现以匹配 “PASS” 字样统计项数，"
+    "检查名称或详情中出现同样字样时会多算，且无法区分跳过项。",
+]
+
 C_PRIMARY      = "#0067C0"
 C_PRIMARY_LT   = "#4CA3E8"
 C_GREEN        = "#39D353"
@@ -217,7 +234,17 @@ DEFAULT_SETTINGS = {
     "retune": False,       # 强制重新调优
     "prealloc": True,      # 预分配磁盘空间
     "insecure": False,     # 跳过证书校验
+    # ⚠ 公告的"已读"标记必须登记在这里。
+    #   load_settings() 只回填 DEFAULT_SETTINGS 里出现过的键 ——
+    #   不登记的话, _dismiss_announce() 写进去的值在下次读取时被静默丢掉,
+    #   表现就是"关掉公告, 重启又弹出来"。(测试抓到过)
+    "announce_seen": "",   # 已关闭公告的版本号
 }
+
+
+# 只属于程序内部状态、不该出现在设置对话框里的键。
+# 设置对话框的 values() 不返回它们, 测试断言"键集合完整"时也要排除。
+INTERNAL_SETTINGS = ("announce_seen",)
 
 
 def load_settings():
@@ -1284,11 +1311,99 @@ class MainWindow(QMainWindow):
             ("关于 mirom", None, self._about)])
 
     # ---------- 链接输入区 ----------
+    def _build_announce(self, parent_layout):
+        """
+        公告栏。
+
+        内容两件事: 第三方 ROM 索引站点入口, 以及本版相对上一版修复的问题。
+        折叠成一行, 点开展开明细, 右侧可关闭; 关闭状态按版本号记忆 ——
+        同一个版本关掉之后就不再出现, 升级到新版本会重新显示。
+        """
+        seen = str(self.cfg.get("announce_seen", ""))
+        if seen == ENGINE_VERSION:
+            self.announce = None
+            return
+
+        box = QFrame()
+        box.setObjectName("announce")
+        box.setStyleSheet(
+            "#announce{background:%s;border:1px solid %s;border-radius:8px;}"
+            % (CARD_BG, C_ORANGE))
+        outer = QVBoxLayout(box)
+        outer.setContentsMargins(12, 8, 8, 8)
+        outer.setSpacing(0)
+
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        ico = QLabel("📢")
+        ico.setStyleSheet("font-size:14px;")
+        head.addWidget(ico)
+
+        # 站点入口做成可点文字 —— 用户看一眼就知道去哪找 ROM
+        site = QLabel('<a href="%s" style="color:%s;text-decoration:none;">%s</a>'
+                      % (ROM_SITE, C_PRIMARY_LT, ROM_SITE_NAME))
+        site.setOpenExternalLinks(False)
+        site.linkActivated.connect(lambda _u: self._open_url(ROM_SITE, ROM_SITE_NAME))
+        site.setToolTip(ROM_SITE)
+        site.setCursor(Qt.PointingHandCursor)
+        site.setStyleSheet("font-size:12px;font-weight:600;")
+        head.addWidget(site)
+
+        head.addWidget(CaptionLabel("—"))
+        head.addWidget(CaptionLabel("v%s 更新" % ENGINE_VERSION))
+        head.addStretch(1)
+
+        self.btn_ann_toggle = TransparentPushButton("展开")
+        self.btn_ann_toggle.clicked.connect(self._toggle_announce)
+        head.addWidget(self.btn_ann_toggle)
+
+        btn_close = TransparentToolButton(FIF.CLOSE)
+        btn_close.setToolTip("关闭公告（本版本不再显示）")
+        btn_close.clicked.connect(self._dismiss_announce)
+        head.addWidget(btn_close)
+        outer.addLayout(head)
+
+        self.ann_body = QWidget()
+        bl = QVBoxLayout(self.ann_body)
+        bl.setContentsMargins(24, 6, 0, 0)
+        bl.setSpacing(3)
+        for it in ANNOUNCE_ITEMS:
+            lb = CaptionLabel("· " + it)
+            lb.setWordWrap(True)
+            lb.setStyleSheet("color:%s;" % TXT)
+            bl.addWidget(lb)
+        self.ann_body.setVisible(False)
+        outer.addWidget(self.ann_body)
+
+        parent_layout.addWidget(box)
+        self.announce = box
+
+    def _toggle_announce(self):
+        if self.announce is None:
+            return
+        # ⚠ 判定"当前是展开还是收起"必须用 isHidden(), 不能用 isVisible():
+        #   父窗口尚未 show() 时, isVisible() 对任何子控件都返回 False,
+        #   于是每次点都算"当前是收起" → 只会展开, 永远收不起来。
+        #   (自测里被抓到过。)
+        show = self.ann_body.isHidden()
+        self.ann_body.setVisible(show)
+        self.btn_ann_toggle.setText("收起" if show else "展开")
+
+    def _dismiss_announce(self):
+        if self.announce is None:
+            return
+        self.announce.setVisible(False)
+        self.cfg["announce_seen"] = ENGINE_VERSION
+        save_settings(self.cfg)
+        self.announce = None
+
     def _build_input(self):
         w = QWidget()
         v = QVBoxLayout(w)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(8)
+
+        self._build_announce(v)
 
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -1837,7 +1952,7 @@ class MainWindow(QMainWindow):
           确定/取消 的对话框 —— 通过时「确定」= 关闭, 失败时「取消」旁边
           多一个「复制详情」, 可以直接把失败项贴给开发者。
         """
-        from mirom import selftest
+        from mirom import selftest, SELFTEST_RESULT
         import io
         import contextlib
         buf = io.StringIO()
@@ -1851,7 +1966,7 @@ class MainWindow(QMainWindow):
         full = buf.getvalue()
         ok = (rc == 0)
 
-        # 日志区保留【完整】输出, 不再只留 6 行 —— 失败时要能贴出来
+        # 日志区保留【完整】输出 —— 失败时要能整段贴出来
         self._append_log("[%s] 引擎自检: %s"
                          % (time.strftime("%H:%M:%S"),
                             "全部通过 ✅" if ok else "有失败项 ❌"),
@@ -1859,25 +1974,34 @@ class MainWindow(QMainWindow):
         for ln in full.splitlines():
             self._append_log("    " + ln)
 
-        # 汇总失败项 (自检最后会打印 "自检失败 N 项: ...")
-        fails = []
-        for ln in full.splitlines():
-            if " FAIL " in ln or ln.strip().startswith("FAIL"):
-                fails.append(ln.strip())
-        n_pass = sum(1 for ln in full.splitlines() if " PASS " in ln)
+        # ★ 计数直接读自检给出的结构化结果。
+        #   旧实现是 `sum(1 for ln in lines if " PASS " in ln)` —— 拿字符串数数:
+        #   检查名或详情里只要出现 "PASS" 字样就会多算, 而且【数不出跳过项】。
+        #   打包运行时静态体检有 3 项是跳过的, 旧口径会把它算成"通过了 55 项",
+        #   实际只跑了 52 项。现在 skipped 单独一栏。
+        r = SELFTEST_RESULT or {}
+        total = r.get("total", 0)
+        n_pass = r.get("passed", 0)
+        n_skip = r.get("skipped", 0)
+        n_fail = r.get("failed", 0)
+        fails = [str(x) for x in (r.get("fails") or [])]
+        skips = r.get("skips") or []
 
         if ok:
             body = ("引擎自检全部通过 ✅\n\n"
-                    "共 %d 项检查, 全部成功。\n\n"
-                    "覆盖范围: URL 解析 / 内嵌 MD5 提取 / 镜像展开 / 磁盘探测 /\n"
+                    "共 %d 项：通过 %d，跳过 %d，失败 0。\n\n"
+                    "覆盖范围：URL 解析 / 内嵌 MD5 提取 / 镜像展开 / 磁盘探测 /\n"
                     "写入路径 / 分片算法 / 无控制台兼容 / 取消通道 / 静态体检 / 记账。"
-                    % n_pass)
+                    % (total, n_pass, n_skip))
+            if skips:
+                body += ("\n\n因环境限制未执行的项：\n"
+                         + "\n".join("· %s —— %s" % (n, w) for n, w in skips[:6]))
         else:
             shown = "\n".join("· " + f[:96] for f in fails[:8]) or "(未能定位到具体失败行)"
             body = ("引擎自检发现问题 ❌\n\n"
-                    "通过 %d 项, 失败 %d 项:\n\n%s\n\n"
-                    "完整输出已写入运行日志 (编辑 → 复制全部日志)。"
-                    % (n_pass, len(fails), shown))
+                    "共 %d 项：通过 %d，跳过 %d，失败 %d。\n\n%s\n\n"
+                    "完整输出已写入运行日志（编辑 → 复制全部日志）。"
+                    % (total, n_pass, n_skip, n_fail, shown))
 
         box = MessageBox("运行引擎自检", body, self)
         box.yesButton.setText("确定")

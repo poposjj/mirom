@@ -122,8 +122,9 @@ try:
     dlg = G.SettingsDialog(dict(G.DEFAULT_SETTINGS))
     chk("SettingsDialog 可构造", dlg is not None, "")
     v = dlg.values()
-    chk("values() 返回全部键",
-        set(v.keys()) == set(G.DEFAULT_SETTINGS.keys()),
+    _want = set(G.DEFAULT_SETTINGS.keys()) - set(G.INTERNAL_SETTINGS)
+    chk("values() 返回全部用户可见键",
+        set(v.keys()) == _want,
         "%d 个键" % len(v))
     chk("values() 类型正确",
         isinstance(v["conns"], int) and isinstance(v["limit_mbps"], float)
@@ -701,6 +702,62 @@ try:
 except Exception as e:
     import traceback
     chk("帮助菜单接线", False, "%s: %s" % (type(e).__name__, e))
+    traceback.print_exc()
+
+print()
+print("=" * 72)
+print("12. 公告栏")
+print("=" * 72)
+# 公告栏承担两件事: 给出第三方 ROM 站点入口, 以及说明本版相对上一版改了什么。
+try:
+    from PySide6.QtWidgets import QLabel as _QL, QFrame as _QF
+
+    chk("ROM 站点地址非空", G.ROM_SITE.startswith("https://"), G.ROM_SITE)
+    chk("站点地址指向 xiaomirom.com", "xiaomirom.com" in G.ROM_SITE, G.ROM_SITE)
+    chk("公告条目非空", len(G.ANNOUNCE_ITEMS) >= 2, "%d 条" % len(G.ANNOUNCE_ITEMS))
+    chk("公告条目都有实质内容",
+        all(len(x.strip()) > 20 for x in G.ANNOUNCE_ITEMS), "")
+    # 对外文案不允许出现口语化括号注释 (与 README 的措辞要求一致)
+    _bad_paren = [x for x in G.ANNOUNCE_ITEMS if "（" in x or "(推荐)" in x]
+    chk("公告条目无口语化括号", not _bad_paren, str(_bad_paren[:1]))
+
+    # 关掉记忆, 保证公告会出现
+    G.save_settings(dict(G.DEFAULT_SETTINGS))
+    w2 = G.MainWindow()
+    chk("公告栏已创建", w2.announce is not None, "")
+    # ⚠ 用 isHidden() 而不是 isVisible(): 父窗口没有 show() 时,
+    #   isVisible() 对任何子控件都返回 False —— 那样这两条断言是恒真的,
+    #   等于没测。isHidden() 反映的是"是否被显式隐藏", 与祖先是否可见无关。
+    chk("明细默认折叠", w2.ann_body.isHidden(), "")
+    w2._toggle_announce()
+    chk("展开后明细可见", not w2.ann_body.isHidden(), "")
+    w2._toggle_announce()
+    chk("再点收起", w2.ann_body.isHidden(), "")
+
+    # 站点入口要是可点标签, 且指向正确地址
+    links = [l for l in w2.announce.findChildren(_QL) if l.text() and "href=" in l.text()]
+    chk("站点是可点链接", len(links) == 1, "%d 个" % len(links))
+    if links:
+        chk("链接指向 ROM 站点", G.ROM_SITE in links[0].text(), "")
+
+    # 关闭后要记住 —— 同一版本不再出现, 换版本才重现
+    w2._dismiss_announce()
+    chk("关闭后写入 announce_seen",
+        G.load_settings().get("announce_seen") == G.ENGINE_VERSION,
+        str(G.load_settings().get("announce_seen")))
+    w3 = G.MainWindow()
+    chk("同一版本重启后不再显示公告", w3.announce is None, "")
+    # 模拟升级: 把记录改成旧版本, 公告应当重新出现
+    _s = G.load_settings()
+    _s["announce_seen"] = "0.0.1"
+    G.save_settings(_s)
+    w4 = G.MainWindow()
+    chk("版本变化后公告重新出现", w4.announce is not None, "")
+    for _w in (w2, w3, w4):
+        _w.deleteLater()
+except Exception as e:
+    import traceback
+    chk("公告栏", False, "%s: %s" % (type(e).__name__, e))
     traceback.print_exc()
 
 import shutil

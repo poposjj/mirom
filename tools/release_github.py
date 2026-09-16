@@ -8,7 +8,7 @@
 
 用法:
   set GH_TOKEN=github_pat_xxx
-  python tools/release_github.py            # 打包并发布 v1.0.0
+  python tools/release_github.py            # 打包并发布 v1.1.0
   python tools/release_github.py --no-upload  # 只压 zip, 不上传
 """
 import json
@@ -28,7 +28,7 @@ force_utf8()          # 英文版 Windows 上中文输出会崩, 见 _console.py
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "mirom")
 REPO = "poposjj/mirom"
-TAG = "v1.0.0"
+TAG = "v1.1.0"
 API = "https://api.github.com"
 
 
@@ -128,7 +128,7 @@ def main():
         return 0
 
     print("\n  创建 Release %s ..." % TAG)
-    body = """## mirom 1.0.0  ·  by poposjj
+    body = """## mirom 1.1.0  ·  by poposjj
 
 小米 ROM 官方下载加速器 —— 把官网 1 MB/s 的龟速下载变成 **100 MB/s**。
 
@@ -145,7 +145,7 @@ def main():
 
 | 文件 | 说明 |
 |---|---|
-| `mirom-1.0.0-win64.zip` | **Windows 10/11 64 位，解压即用，免安装** |
+| `mirom-1.1.0-win64.zip` | **Windows 10/11 64 位，解压即用，免安装** |
 
 > ⚠️ 解压后必须**整个文件夹一起用**，不能只拷 `mirom.exe` —— 同级 `_internal` 目录里是运行库。
 
@@ -174,7 +174,7 @@ def main():
     try:
         rel = call("POST", "/repos/%s/releases" % REPO, {
             "tag_name": TAG,
-            "name": "mirom 1.0.0  by poposjj",
+            "name": "mirom 1.1.0  by poposjj",
             "body": body,
             "draft": False,
             "prerelease": False,

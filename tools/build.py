@@ -31,7 +31,7 @@ from _console import force_utf8      # noqa: E402
 #   不处理的话脚本第一句中文就 UnicodeEncodeError 崩掉 (CI 上就是这么炸的)。
 force_utf8()
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # 排掉用不到的 Qt 模块 —— 不排的话 dist 会从 156MB 涨到 600MB+。
 # ⚠ 绝对不要排 PySide6.QtOpenGL / QtOpenGLWidgets: pyqtgraph 的 PlotCurveItem

@@ -66,7 +66,7 @@ UNIT = 1 * MB          # 最小调度单元 / 断点续传粒度
 SEED = 16 * MB         # 初始分片大小
 READ = 512 * 1024      # socket 单次读取
 TUNE_CACHE = os.path.join(os.path.expanduser("~"), ".mirom_tune.json")
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 AUTHOR = "poposjj"
 BYLINE = "by %s" % AUTHOR
 PROXY = None           # (host, port) 或 None; 由 --proxy / 环境变量设置
@@ -2043,6 +2043,16 @@ def _undefined_names(path):
     return out
 
 
+SELFTEST_RESULT = {}
+"""最近一次 selftest() 的结构化结果。
+
+给 GUI 用的: 结果弹窗要显示"通过 N 项 / 跳过 N 项"。
+在此之前界面是靠 `" PASS " in line` 数行数 —— 检查名或详情里只要出现
+"PASS" 字样就会数错, 而且区分不出"跳过"。这里直接给出计数。
+字段: total / passed / skipped / failed / fails / skips / ok
+"""
+
+
 def selftest():
     """
     内置自检 —— 不联网, 只验证纯逻辑部分。
@@ -2051,11 +2061,39 @@ def selftest():
     """
     import tempfile
     fails = []
+    skips = []
+    stat = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
 
     def chk(name, cond, extra=""):
-        print("  %-46s %s %s" % (name, "PASS" if cond else "FAIL", extra))
-        if not cond:
+        stat["total"] += 1
+        if cond:
+            stat["passed"] += 1
+        else:
+            stat["failed"] += 1
             fails.append(name)
+        # 名称超过 46 列时不截断 —— 截断会让两条不同的检查看起来一模一样
+        print("  %-46s %s %s" % (name, "PASS" if cond else "FAIL", extra))
+
+    def skip(name, why):
+        """
+        显式记录"这一项【没有跑】"。
+
+        ★ 加这个的原因 (打包后实测发现的缺陷):
+          静态体检要读 .py 源文件。冻结成 EXE 之后源码在 PYZ 压缩包里,
+          os.path.exists() 为假, 原来的代码直接 `continue` ——
+          结果报告里只剩一行标题, 紧接着就是下一节:
+              [静态体检: 未定义名]
+              --------------------------------------------------------------
+              [记账: 位图 vs written]
+          用户看到的是一个【空段落】, 会以为自检坏了;
+          更糟的是结论照样打"全部通过", 因为这几项根本没进统计。
+          跳过本身是合理的 (确实没源码可读), 但必须说出来, 而且要单独计数 ——
+          "55 项通过" 和 "55 项通过 + 3 项没跑" 是两回事。
+        """
+        stat["total"] += 1
+        stat["skipped"] += 1
+        skips.append((name, why))
+        print("  %-46s %s %s" % (name, "SKIP", why))
 
     print("mirom %s 自检" % VERSION)
     print("-" * 62)
@@ -2238,9 +2276,14 @@ def selftest():
         for _fn in ("mirom.py", "mirom_gui.py", "vdesk.py"):
             _p = os.path.join(_self_dir, _fn)
             if not os.path.exists(_p):
+                # 冻结成 EXE 时源码在 PYZ 里, 磁盘上没有 .py 文件。
+                # 这是合理跳过, 但必须【说出来】—— 见 skip() 的注释。
+                skip("%s 无未定义名" % _fn,
+                     "源码不可用 (打包运行), 未检查")
                 continue
             _u = _undefined_names(_p)
             if _u is None:
+                skip("%s 无未定义名" % _fn, "文件读不动, 未检查")
                 continue
             chk("%s 无未定义名" % _fn, not _u, ("" if not _u else "; ".join(_u[:4])))
     except Exception as _e:
@@ -2278,10 +2321,28 @@ def selftest():
         chk("记账不变式", False, "%s: %s" % (type(e).__name__, e))
 
     print("-" * 62)
+    print("共 %d 项: 通过 %d, 跳过 %d, 失败 %d"
+          % (stat["total"], stat["passed"], stat["skipped"], stat["failed"]))
+    if skips:
+        print("跳过的项:")
+        for _n, _w in skips:
+            print("  · %s —— %s" % (_n, _w))
+    # 结构化结果: 供 GUI 直接读, 不要再靠数 " PASS " 字符串
+    # (检查名或详情里出现 PASS/FAIL 字样就会数错)。
+    SELFTEST_RESULT.clear()
+    SELFTEST_RESULT.update({
+        "total": stat["total"], "passed": stat["passed"],
+        "skipped": stat["skipped"], "failed": stat["failed"],
+        "fails": list(fails), "skips": [(n, w) for n, w in skips],
+        "ok": (stat["failed"] == 0),
+    })
     if fails:
         print("自检失败 %d 项: %s" % (len(fails), ", ".join(fails)))
         return 1
-    print("全部通过 ✅")
+    if skips:
+        print("全部通过 ✅  (其中 %d 项因环境限制未执行, 见上)" % stat["skipped"])
+    else:
+        print("全部通过 ✅")
     return 0
 
 

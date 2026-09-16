@@ -129,7 +129,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           if ("${{ inputs.make_release }}" -eq "true" -and -not $tag.StartsWith("v")) {
-            $tag = "v1.0.0"
+            $tag = "v1.1.0"
           }
           Write-Host "目标 tag: $tag"
           $zip = Get-ChildItem "dist\mirom-*-win64.zip" | Select-Object -First 1
